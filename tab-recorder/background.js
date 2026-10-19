@@ -1,3 +1,5 @@
+importScripts('calendar-alert.js');
+
 async function ensureOffscreen() {
   if (await chrome.offscreen.hasDocument()) return;
   await chrome.offscreen.createDocument({
@@ -6,6 +8,17 @@ async function ensureOffscreen() {
     justification: 'Grabar la pestaña con MediaRecorder'
   });
 }
+
+// Manda un mensaje al offscreen; justo después de crearlo puede no estar escuchando todavía, así que reintenta
+async function sendToOffscreen(msg) {
+  await ensureOffscreen();
+  for (let i = 0; i < 20; i++) {
+    try { await chrome.runtime.sendMessage({ target: 'offscreen', ...msg }); return; }
+    catch (e) { await new Promise(r => setTimeout(r, 150)); }
+  }
+  throw new Error('El grabador no responde');
+}
+const fail = e => chrome.storage.session.set({ error: String(e?.message || e) });
 
 // Que el content script de Meet pueda leer el estado de grabación
 chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
@@ -38,20 +51,24 @@ function drawIcon(state, on) {
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.target !== 'background') return;
+  if (msg.type === 'test-alert') {
+    self.calendarAlert.showAlert({ title: 'Llamada de prueba', url: 'https://meet.google.com/', start: Date.now() + 120000 });
+    return;
+  }
   if (msg.type === 'meet-start') {
     if (curState !== 'idle') return;
     // Chrome suele exigir un clic en el ícono para capturar; si no deja, abrimos el popup para que toques Rec
     chrome.tabCapture.getMediaStreamId({ targetTabId: sender.tab.id })
-      .then(streamId => ensureOffscreen().then(() =>
-        chrome.runtime.sendMessage({ target: 'offscreen', type: 'start', streamId })))
-      .catch(() => chrome.action.openPopup().catch(() => {}));
+      .then(streamId => sendToOffscreen({ type: 'start', streamId }).catch(fail),
+        e => { fail(e); chrome.action.openPopup().catch(() => {}); });
     return;
   }
   if (msg.type === 'start') {
-    ensureOffscreen().then(() =>
-      chrome.runtime.sendMessage({ target: 'offscreen', type: 'start', streamId: msg.streamId }));
+    sendToOffscreen({ type: 'start', streamId: msg.streamId }).catch(fail);
+  } else if (msg.type === 'error') {
+    fail(msg.error);
   } else if (msg.type === 'state') {
-    chrome.storage.session.set({ state: msg.state });
+    chrome.storage.session.set({ state: msg.state, error: null });
     curState = msg.state;
     drawIcon(msg.state, true);
   } else if (msg.type === 'blink') {
