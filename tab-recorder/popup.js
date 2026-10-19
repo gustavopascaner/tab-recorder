@@ -26,7 +26,7 @@ $('rec').onclick = async () => { try {
   }
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
-  chrome.runtime.sendMessage({ target: 'background', type: 'start', streamId });
+  chrome.runtime.sendMessage({ target: 'background', type: 'start', streamId, tabId: tab.id, url: tab.url });
 } catch (e) { showError(e); } };
 $('pause').onclick = () => chrome.runtime.sendMessage({ target: 'offscreen', type: 'togglePause' });
 $('stop').onclick = () => chrome.runtime.sendMessage({ target: 'offscreen', type: 'stop' });

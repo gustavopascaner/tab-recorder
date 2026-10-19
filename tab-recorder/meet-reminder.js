@@ -27,7 +27,21 @@ function show() {
 }
 function hide() { host?.remove(); host = null; }
 
+// Si grabando se sale de la llamada (o termina), avisar al fondo para que corte la grabación
+const LEAVE = /salir de la llamada|leave call|abandonar|sair da chamada|quitter l.appel/i;
+const inCall = () => [...document.querySelectorAll('button[aria-label]')].some(b => LEAVE.test(b.getAttribute('aria-label')));
+let sawCall = false, missing = 0;
+function watchCall() {
+  if (!recording) { sawCall = false; missing = 0; return; }
+  if (inCall()) { sawCall = true; missing = 0; }
+  else if (sawCall && ++missing >= 4) { // ~8 s sin el botón de colgar: la llamada terminó
+    sawCall = false; missing = 0;
+    chrome.runtime.sendMessage({ target: 'background', type: 'meet-left' });
+  }
+}
+
 function check() {
+  watchCall();
   if (MEET_CODE.test(location.pathname)) show(); else { hide(); dismissedFor = null; }
 }
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tab Recorder",
-  "version": "1.3",
+  "version": "1.4",
   "description": "Graba video + audio de la pestaña y tu micrófono con Rec / Pause / Stop y guarda en Descargas/TabRecordings.",
   "permissions": [
     "tabCapture",
@@ -44,11 +44,5 @@
     "https://www.googleapis.com/*"
   ],
   "options_page": "options.html",
-  "oauth2": {
-    "client_id": "742859116230-pc6ngt8a02unpgk9tppc70tsh7tdg1md.apps.googleusercontent.com",
-    "scopes": [
-      "https://www.googleapis.com/auth/calendar.events.readonly"
-    ]
-  },
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA8Kwtbt2LczJfSDlPo7Yg6PwKrh8fy87r0rRPmluMz63gy7y8+hjy6AlsQnZ3KcUoew39wexN77BjSglvqw0lPXlA9C3f9VfDgB12dbaVHRJwlx96plAai3Te55T8yVLrRW7W6tZf0hlUtxk9jRk97wF+jbGrZ/G+fClsgIaACBQ3rIdwtWR8FSNiwqto2Gk5C5LbgFUDUTDI+lCV8CV7nd0zrYNDYGmpYsTZXqILC4R/hCyBdBINCIkNrg7Il2CPip9eW1I4o3IqHhhqG47Abi7Ph4dFzHpQx9HGJwyogrDjsn/NTt1hkgqbxh4c5LJYZggiSso25chtMvwKhmWKjwIDAQAB"
 }

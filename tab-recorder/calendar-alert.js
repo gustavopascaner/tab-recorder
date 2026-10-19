@@ -4,14 +4,8 @@ const DEFAULTS = { leadMin: 5 };
 let chain = Promise.resolve();
 const serial = fn => (chain = chain.then(fn).catch(() => {}));
 
-async function token(interactive = false) {
-  const r = await chrome.identity.getAuthToken({ interactive });
-  return typeof r === 'string' ? r : r?.token;
-}
-
 async function fetchEvents(retry = true) {
-  const t = await token(false);
-  if (!t) throw new Error('Falta conectar Google Calendar');
+  const t = await getToken(!retry);
   const now = Date.now();
   const q = new URLSearchParams({
     timeMin: new Date(now - 10 * 60e3).toISOString(), timeMax: new Date(now + 24 * 3600e3).toISOString(),
@@ -19,7 +13,7 @@ async function fetchEvents(retry = true) {
     fields: 'items(id,summary,status,start,hangoutLink,conferenceData/entryPoints,attendees(self,responseStatus))'
   });
   const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?' + q, { headers: { Authorization: 'Bearer ' + t } });
-  if (res.status === 401 && retry) { await chrome.identity.removeCachedAuthToken({ token: t }); return fetchEvents(false); }
+  if (res.status === 401 && retry) return fetchEvents(false);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const { items = [] } = await res.json();
   return items.flatMap(e => {
@@ -78,6 +72,6 @@ chrome.alarms.onAlarm.addListener(a => {
 chrome.runtime.onStartup.addListener(() => serial(refresh));
 chrome.runtime.onInstalled.addListener(() => serial(refresh));
 chrome.storage.onChanged.addListener((c, area) => {
-  if (area === 'local' && (c.leadMin || c.connected)) serial(refresh);
+  if (area === 'local' && (c.leadMin || c.auth)) serial(refresh);
 });
-self.calendarAlert = { showAlert, token };
+self.calendarAlert = { showAlert };

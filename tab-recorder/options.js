@@ -22,12 +22,10 @@ render();
 
 $('connect').onclick = async () => {
   try {
-    const r = await chrome.identity.getAuthToken({ interactive: true });
-    if (!(typeof r === 'string' ? r : r?.token)) throw new Error('sin token');
-    await chrome.storage.local.set({ connected: Date.now() });
+    await connect();
     $('msg').textContent = 'Conectado, revisando…';
   } catch (e) {
-    $('msg').textContent = 'No se pudo conectar: ' + (e.message || e) + '. ¿Está el client_id en manifest.json?';
+    $('msg').textContent = 'No se pudo conectar: ' + (e.message || e);
   }
 };
 $('test').onclick = () => chrome.runtime.sendMessage({ target: 'background', type: 'test-alert' });

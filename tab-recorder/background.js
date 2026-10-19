@@ -1,4 +1,4 @@
-importScripts('calendar-alert.js');
+importScripts('auth.js', 'calendar-alert.js');
 
 async function ensureOffscreen() {
   if (await chrome.offscreen.hasDocument()) return;
@@ -18,6 +18,46 @@ async function sendToOffscreen(msg) {
   }
   throw new Error('El grabador no responde');
 }
+const MAX_REC_MS = 2 * 3600e3;
+const MEET_CODE = /[a-z]{3}-[a-z]{4}-[a-z]{3}/;
+const pad = n => String(n).padStart(2, '0');
+const safe = s => s.replace(/[\\/:*?"<>|\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').replace(/^[.\s]+|[.\s]+$/g, '').slice(0, 80);
+
+// Nombre de los archivos: título del evento de Calendar (por el código de Meet de la pestaña) + fecha y hora de inicio
+async function recordingName(url) {
+  const code = MEET_CODE.exec(url || '')?.[0];
+  const { events = [] } = await chrome.storage.local.get('events');
+  const now = Date.now();
+  const ev = events.filter(e => code && e.url.includes(code)).sort((a, b) => Math.abs(a.start - now) - Math.abs(b.start - now))[0];
+  const d = new Date();
+  const when = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}`;
+  return `${(ev && safe(ev.title)) || 'rec'} ${when}`;
+}
+
+// Arranca la grabación de una pestaña y deja anotado qué se graba (para nombrar, y para cortar sola)
+async function beginRecording(streamId, tab) {
+  await chrome.storage.session.set({
+    recTab: tab.id, recMeet: /^https:\/\/meet\.google\.com\//.test(tab.url || ''),
+    recMeetPath: new URL(tab.url || 'about:blank').pathname, recName: await recordingName(tab.url)
+  });
+  chrome.alarms.create('rec-limit', { when: Date.now() + MAX_REC_MS });
+  await sendToOffscreen({ type: 'start', streamId });
+}
+
+const stopRecording = () => chrome.runtime.sendMessage({ target: 'offscreen', type: 'stop' }).catch(() => {});
+async function stopIfRecordingTab(tabId, urlPath) {
+  // El estado sale del storage: el service worker puede haberse reiniciado durante una grabación larga
+  const { state, recTab, recMeet, recMeetPath } = await chrome.storage.session.get(['state', 'recTab', 'recMeet', 'recMeetPath']);
+  if (!state || state === 'idle' || tabId !== recTab) return;
+  // Una pestaña de Meet que sale de la sala (o se cierra) termina la grabación; otras pestañas solo si se cierran
+  if (urlPath === undefined || (recMeet && urlPath !== recMeetPath)) stopRecording();
+}
+chrome.tabs.onRemoved.addListener(tabId => stopIfRecordingTab(tabId));
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.url) stopIfRecordingTab(tabId, new URL(info.url).pathname);
+});
+chrome.alarms.onAlarm.addListener(a => { if (a.name === 'rec-limit') stopRecording(); });
+
 const fail = e => chrome.storage.session.set({ error: String(e?.message || e) });
 
 // Que el content script de Meet pueda leer el estado de grabación
@@ -59,27 +99,32 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     if (curState !== 'idle') return;
     // Chrome suele exigir un clic en el ícono para capturar; si no deja, abrimos el popup para que toques Rec
     chrome.tabCapture.getMediaStreamId({ targetTabId: sender.tab.id })
-      .then(streamId => sendToOffscreen({ type: 'start', streamId }).catch(fail),
+      .then(streamId => beginRecording(streamId, sender.tab).catch(fail),
         e => { fail(e); chrome.action.openPopup().catch(() => {}); });
     return;
   }
   if (msg.type === 'start') {
-    sendToOffscreen({ type: 'start', streamId: msg.streamId }).catch(fail);
+    beginRecording(msg.streamId, { id: msg.tabId, url: msg.url }).catch(fail);
+  } else if (msg.type === 'meet-left') {
+    stopIfRecordingTab(sender.tab.id, '/');
   } else if (msg.type === 'error') {
     fail(msg.error);
   } else if (msg.type === 'state') {
     chrome.storage.session.set({ state: msg.state, error: null });
     curState = msg.state;
+    if (msg.state === 'idle') chrome.alarms.clear('rec-limit');
     drawIcon(msg.state, true);
   } else if (msg.type === 'blink') {
     if (curState === 'recording') drawIcon('recording', msg.on);
   } else if (msg.type === 'save') {
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    // El audio de voces (mic/pestaña separados) se baja primero: el .webm del video dispara la transcripción
-    const jobs = [[msg.vozUrl, `TabRecordings/rec-${ts}-voces.webm`], [msg.url, `TabRecordings/rec-${ts}.webm`]];
-    for (const [url, filename] of jobs) {
-      chrome.downloads.download({ url, filename, saveAs: false }, id => pending.add(id));
-    }
+    chrome.storage.session.get('recName').then(({ recName }) => {
+      const name = recName || `rec ${new Date().toISOString().replace(/[:.]/g, '-')}`;
+      // El audio de voces (mic/pestaña separados) se baja primero: el .webm del video dispara la transcripción
+      const jobs = [[msg.vozUrl, `TabRecordings/${name}-voces.webm`], [msg.url, `TabRecordings/${name}.webm`]];
+      for (const [url, filename] of jobs) {
+        chrome.downloads.download({ url, filename, saveAs: false }, id => pending.add(id));
+      }
+    });
   }
 });
 
