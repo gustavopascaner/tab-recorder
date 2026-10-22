@@ -14,12 +14,17 @@ chrome.runtime.onMessage.addListener(async (msg) => {
         chromeMediaSource: 'tab', chromeMediaSourceId: msg.streamId,
         maxWidth: 1280, maxHeight: 720, maxFrameRate: 15
       };
+      // Micrófono elegido en Opciones (si no, el predeterminado). Sin procesado: la cancelación de eco puede dejarlo mudo
+      const micId = msg.micId;
+      const raw = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+      const mic = await navigator.mediaDevices.getUserMedia({ audio: micId ? { ...raw, deviceId: { exact: micId } } : raw })
+        .catch(() => navigator.mediaDevices.getUserMedia({ audio: true }));
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: msg.streamId } },
         video: { mandatory: c }
       });
-      const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioCtx = new AudioContext();
+      await audioCtx.resume();
       const tabSrc = audioCtx.createMediaStreamSource(stream);
       const dest = audioCtx.createMediaStreamDestination();
       tabSrc.connect(dest);                                 // audio de la pestaña (los demás)
@@ -65,6 +70,16 @@ chrome.runtime.onMessage.addListener(async (msg) => {
         setState('idle');
         chrome.runtime.sendMessage({ target: 'background', type: 'save', url, vozUrl });
       };
+      // Si el mic llega mudo, avisarlo en el popup (con el nombre del dispositivo) en vez de grabar en silencio
+      const an = audioCtx.createAnalyser(); audioCtx.createMediaStreamSource(mic).connect(an);
+      const buf = new Float32Array(an.fftSize); let peak = 0;
+      const lvl = setInterval(() => { an.getFloatTimeDomainData(buf); for (const v of buf) peak = Math.max(peak, Math.abs(v)); }, 200);
+      setTimeout(() => {
+        clearInterval(lvl);
+        const t = mic.getAudioTracks()[0];
+        if (peak < 0.001 && recorder) chrome.runtime.sendMessage({ target: 'background', type: 'error',
+          error: `Tu micrófono llega sin sonido (${t.label}, ${t.muted ? 'silenciado' : t.readyState}). Revisá Opciones.` });
+      }, 5000);
       recorder.start(1000);
       blinkTimer = setInterval(blink, 600);
       vozRecorder.start(1000);

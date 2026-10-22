@@ -41,7 +41,8 @@ async function beginRecording(streamId, tab) {
     recMeetPath: new URL(tab.url || 'about:blank').pathname, recName: await recordingName(tab.url)
   });
   chrome.alarms.create('rec-limit', { when: Date.now() + MAX_REC_MS });
-  await sendToOffscreen({ type: 'start', streamId });
+  const { micId } = await chrome.storage.local.get({ micId: '' });
+  await sendToOffscreen({ type: 'start', streamId, micId });
 }
 
 const stopRecording = () => chrome.runtime.sendMessage({ target: 'offscreen', type: 'stop' }).catch(() => {});

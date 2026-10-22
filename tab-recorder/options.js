@@ -29,3 +29,11 @@ $('connect').onclick = async () => {
   }
 };
 $('test').onclick = () => chrome.runtime.sendMessage({ target: 'background', type: 'test-alert' });
+
+(async () => {
+  const { micId } = await chrome.storage.local.get({ micId: '' });
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+  $('mic').innerHTML = '<option value="">Predeterminado del sistema</option>';
+  for (const d of devs) $('mic').add(new Option(d.label || d.deviceId, d.deviceId, false, d.deviceId === micId));
+  $('mic').onchange = () => chrome.storage.local.set({ micId: $('mic').value });
+})();
