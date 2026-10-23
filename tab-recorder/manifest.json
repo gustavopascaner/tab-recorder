@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tab Recorder",
-  "version": "1.4",
+  "version": "1.5",
   "description": "Graba video + audio de la pestaña y tu micrófono con Rec / Pause / Stop y guarda en Descargas/TabRecordings.",
   "permissions": [
     "tabCapture",

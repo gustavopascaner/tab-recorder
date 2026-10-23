@@ -26,9 +26,11 @@ const safe = s => s.replace(/[\\/:*?"<>|\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').
 // Nombre de los archivos: título del evento de Calendar (por el código de Meet de la pestaña) + fecha y hora de inicio
 async function recordingName(url) {
   const code = MEET_CODE.exec(url || '')?.[0];
-  const { events = [] } = await chrome.storage.local.get('events');
   const now = Date.now();
-  const ev = events.filter(e => code && e.url.includes(code)).sort((a, b) => Math.abs(a.start - now) - Math.abs(b.start - now))[0];
+  const find = events => events.filter(e => code && e.url.includes(code)).sort((a, b) => Math.abs(a.start - now) - Math.abs(b.start - now))[0];
+  let ev = find((await chrome.storage.local.get({ events: [] })).events);
+  // Si el evento se creó hace menos de 5 min todavía no está en la lista: se consulta Calendar en el momento
+  if (code && !ev) ev = find(await fetchEvents().catch(() => []));
   const d = new Date();
   const when = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}`;
   return `${(ev && safe(ev.title)) || 'rec'} ${when}`;
@@ -99,8 +101,9 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg.type === 'meet-start') {
     if (curState !== 'idle') return;
     // Chrome suele exigir un clic en el ícono para capturar; si no deja, abrimos el popup para que toques Rec
+    // sender.tab.url llega vacío sin el permiso "tabs"; sender.url es la URL de la página de Meet
     chrome.tabCapture.getMediaStreamId({ targetTabId: sender.tab.id })
-      .then(streamId => beginRecording(streamId, sender.tab).catch(fail),
+      .then(streamId => beginRecording(streamId, { id: sender.tab.id, url: sender.url }).catch(fail),
         e => { fail(e); chrome.action.openPopup().catch(() => {}); });
     return;
   }
